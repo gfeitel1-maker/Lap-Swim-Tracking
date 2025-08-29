@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+}
+
+
+document.getElementById('swimDate').valueAsDate = new Date();
+document.getElementById('lapForm').addEventListener('submit', async function (e) {
+e.preventDefault();
+const name = document.getElementById('swimmerName').value.trim().slice(0,80);
+const laps = Number.parseInt(document.getElementById('lapsSwum').value, 10);
+const date = document.getElementById('swimDate').value;
+if (!name || Number.isNaN(laps) || laps < 1 || !date) { alert('Please fill in all fields correctly'); return; }
+try { await client.addEntry({ name, laps, date }); const successMsg = document.getElementById('successMessage'); successMsg.style.display = 'block'; setTimeout(() => { successMsg.style.display = 'none'; }, 3000); this.reset(); document.getElementById('swimDate').valueAsDate = new Date(); await refresh(); } catch (e) { alert(e.message || 'Failed to save'); }
+});
+
+
+function updateAllDisplays() { updateStats(); updateLeaderboard(); updateRecentEntries(); reflectConn(); }
+function updateStats() { const s = state.stats || calcFromLocal(); document.getElementById('totalLapsCount').textContent = Number(s.total_laps||0).toLocaleString(); document.getElementById('totalSwimmersCount').textContent = Number(s.total_swimmers||0).toLocaleString(); document.getElementById('totalEntriesCount').textContent = Number(s.total_entries||0).toLocaleString(); }
+
+
+function updateLeaderboard() {
+const el = document.getElementById('leaderboardContent');
+const entries = Object.entries(state.swimmers||{});
+if (!entries.length) { el.innerHTML = '<div class="empty-state"><p>No entries yet. Be the first to log your laps!</p></div>'; return; }
+const sorted = entries.sort(([,a],[,b])=>b-a).slice(0,15);
+el.innerHTML = sorted.map(([name, totalLaps], i) => {
+const medal = i===0?'🥇 ':i===1?'🥈 ':i===2?'🥉 ':'';
+return '<div class="swimmer-card">\n <div class="swimmer-info">\n <div class="swimmer-name">'+ medal + escapeHTML(name) +'</div>\n <div class="swimmer-rank">#'+ (i+1) +' Overall</div>\n </div>\n <div class="swimmer-laps">'+ Number(totalLaps).toLocaleString() +' laps</div>\n</div>';
+}).join('');
+}
+
+
+function updateRecentEntries() {
+const el = document.getElementById('recentEntriesContent');
+if (!state.entries.length) { el.innerHTML = '<div class="empty-state"><p>No recent entries to display.</p></div>'; return; }
+const display = state.entries.slice(0,20);
+el.innerHTML = display.map((entry)=>{
+const formattedDate = new Date(entry.date || entry.created_at).toLocaleDateString();
+const ts = entry.timestamp || entry.created_at || new Date().toISOString();
+const timeAgo = getTimeAgo(ts);
+const nm = entry.name || entry.swimmer_name;
+return '<div class="entry-item">\n <div class="entry-info">\n <div class="entry-name">'+ escapeHTML(nm) +'</div>\n <div class="entry-date">'+ formattedDate +' • '+ timeAgo +'</div>\n </div>\n <div class="entry-laps">'+ Number(entry.laps) +' laps</div>\n</div>';
+}).join('');
+}
+
+
+function getTimeAgo(ts) { const now = Date.now(); const t = new Date(ts).getTime(); const m = Math.floor((now - t)/60000); if (m < 1) return 'Just now'; if (m < 60) return m + 'm ago'; const h = Math.floor(m/60); if (h < 24) return h + 'h ago'; const d = Math.floor(h/24); return d + 'd ago'; }
+
+
+document.getElementById('exportBtn').addEventListener('click', async ()=>{ try { const { data } = await client.exportJSON(); const blob = new Blob([JSON.stringify(data, null, 2)], { type:'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'lap-tracker-export.json'; a.click(); URL.revokeObjectURL(a.href); } catch(e){ alert(e.message||'Export failed'); } });
+
+
+const importFile = document.getElementById('importFile');
+document.getElementById('importBtn').addEventListener('click', ()=> importFile.click());
+importFile.addEventListener('change', async ()=>{ const file = importFile.files[0]; if (!file) return; try { const text = await file.text(); const payload = JSON.parse(text); let adminToken = ''; if (client.isAPI) adminToken = prompt('Admin token (required for API import):', localStorage.getItem(LS_KEYS.admin)||'')||''; if (adminToken) localStorage.setItem(LS_KEYS.admin, adminToken); const res = await client.importJSON(payload, adminToken); alert('Imported: ' + (res.inserted || res.count || 'OK')); await refresh(); } catch(e){ alert(e.message||'Import failed'); } importFile.value = ''; });
+
+
+document.addEventListener('DOMContentLoaded', async ()=>{ reflectConn(); await refresh(); });
+setInterval(async ()=>{ if (!client.isAPI) showSaveStatus(); }, 30000);
+</script>
+</body>
+</html>
